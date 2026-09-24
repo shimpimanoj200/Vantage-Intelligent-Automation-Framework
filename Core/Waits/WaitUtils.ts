@@ -1,9 +1,19 @@
-import { ConfigManager } from '../Config/ConfigManager';
-import { Logger } from '../Logger/Logger';
+import { browser } from '@wdio/globals';
 import type { ChainablePromiseElement } from 'webdriverio';
+import { ConfigManager } from '../Config/ConfigManager';
+import { WaitError } from '../Error/FrameworkError';
+import { Logger } from '../Logger/Logger';
 
-type ElementLike = WebdriverIO.Element | ChainablePromiseElement;
+/**
+ * An element as returned by `$()` (chainable, lazily resolved) or an
+ * already-resolved element.
+ */
+export type ElementLike = WebdriverIO.Element | ChainablePromiseElement;
 
+/**
+ * Centralised, condition-based waits. All timeouts default to
+ * `timeouts.waitForElement` from the environment configuration.
+ */
 export default class WaitUtils {
 
     /**
@@ -14,41 +24,19 @@ export default class WaitUtils {
     }
 
     /**
-     * Resolve a chainable element (e.g. from `$()`) to a concrete element.
-     */
-    private static async resolve(
-        element: ElementLike
-    ): Promise<WebdriverIO.Element> {
-        return await element as WebdriverIO.Element;
-    }
-
-    /**
-     * Wait until an element exists.
+     * Wait until an element exists in the UI hierarchy (it may be hidden).
      */
     public static async waitForExist(
         elementLike: ElementLike,
         timeout: number = WaitUtils.defaultTimeout
     ): Promise<void> {
 
-        const element = await WaitUtils.resolve(elementLike);
-
-        Logger.debug(
-            `Waiting for element to exist. Timeout: ${timeout}ms`
+        await WaitUtils.waitFor(
+            'exist',
+            elementLike,
+            timeout,
+            element => element.waitForExist({ timeout })
         );
-
-        try {
-            await element.waitForExist({
-                timeout
-            });
-        } catch (error) {
-            Logger.error(
-                error instanceof Error
-                    ? error
-                    : new Error(String(error))
-            );
-
-            throw error;
-        }
     }
 
     /**
@@ -59,55 +47,28 @@ export default class WaitUtils {
         timeout: number = WaitUtils.defaultTimeout
     ): Promise<void> {
 
-        const element = await WaitUtils.resolve(elementLike);
-
-        Logger.debug(
-            `Waiting for element to be displayed. Timeout: ${timeout}ms`
+        await WaitUtils.waitFor(
+            'be displayed',
+            elementLike,
+            timeout,
+            element => element.waitForDisplayed({ timeout })
         );
-
-        try {
-            await element.waitForDisplayed({
-                timeout
-            });
-        } catch (error) {
-            Logger.error(
-                error instanceof Error
-                    ? error
-                    : new Error(String(error))
-            );
-
-            throw error;
-        }
     }
 
     /**
-     * Wait until an element is no longer displayed.
+     * Wait until an element is no longer displayed (or no longer exists).
      */
     public static async waitForNotDisplayed(
         elementLike: ElementLike,
         timeout: number = WaitUtils.defaultTimeout
     ): Promise<void> {
 
-        const element = await WaitUtils.resolve(elementLike);
-
-        Logger.debug(
-            `Waiting for element to disappear. Timeout: ${timeout}ms`
+        await WaitUtils.waitFor(
+            'disappear',
+            elementLike,
+            timeout,
+            element => element.waitForDisplayed({ timeout, reverse: true })
         );
-
-        try {
-            await element.waitForDisplayed({
-                timeout,
-                reverse: true
-            });
-        } catch (error) {
-            Logger.error(
-                error instanceof Error
-                    ? error
-                    : new Error(String(error))
-            );
-
-            throw error;
-        }
     }
 
     /**
@@ -118,58 +79,40 @@ export default class WaitUtils {
         timeout: number = WaitUtils.defaultTimeout
     ): Promise<void> {
 
-        const element = await WaitUtils.resolve(elementLike);
-
-        Logger.debug(
-            `Waiting for element to be enabled. Timeout: ${timeout}ms`
+        await WaitUtils.waitFor(
+            'be enabled',
+            elementLike,
+            timeout,
+            element => element.waitForEnabled({ timeout })
         );
-
-        try {
-            await element.waitForEnabled({
-                timeout
-            });
-        } catch (error) {
-            Logger.error(
-                error instanceof Error
-                    ? error
-                    : new Error(String(error))
-            );
-
-            throw error;
-        }
     }
 
     /**
-     * Wait until an element is clickable.
+     * Wait until an element can be tapped/clicked.
+     *
+     * WebdriverIO's waitForClickable throws in a native mobile context, so
+     * there it waits for "displayed AND enabled" instead.
      */
     public static async waitForClickable(
         elementLike: ElementLike,
         timeout: number = WaitUtils.defaultTimeout
     ): Promise<void> {
 
-        const element = await WaitUtils.resolve(elementLike);
-
-        Logger.debug(
-            `Waiting for element to become clickable. Timeout: ${timeout}ms`
+        await WaitUtils.waitFor(
+            'be clickable',
+            elementLike,
+            timeout,
+            element => browser.isMobile && browser.isNativeContext
+                ? element.waitUntil(
+                    async () => await element.isDisplayed() && await element.isEnabled(),
+                    { timeout }
+                )
+                : element.waitForClickable({ timeout })
         );
-
-        try {
-            await element.waitForClickable({
-                timeout
-            });
-        } catch (error) {
-            Logger.error(
-                error instanceof Error
-                    ? error
-                    : new Error(String(error))
-            );
-
-            throw error;
-        }
     }
 
     /**
-     * Wait until an element contains expected text.
+     * Wait until an element's text contains the expected text.
      */
     public static async waitForText(
         elementLike: ElementLike,
@@ -177,39 +120,19 @@ export default class WaitUtils {
         timeout: number = WaitUtils.defaultTimeout
     ): Promise<void> {
 
-        const element = await WaitUtils.resolve(elementLike);
-
-        Logger.debug(
-            `Waiting for text "${expectedText}". Timeout: ${timeout}ms`
+        await WaitUtils.waitFor(
+            `contain text "${expectedText}"`,
+            elementLike,
+            timeout,
+            element => element.waitUntil(
+                async () => (await element.getText()).includes(expectedText),
+                { timeout }
+            )
         );
-
-        try {
-            await element.waitUntil(
-                async () => {
-                    const actualText =
-                        await element.getText();
-
-                    return actualText.includes(expectedText);
-                },
-                {
-                    timeout,
-                    timeoutMsg:
-                        `Expected text "${expectedText}" was not found within ${timeout}ms.`
-                }
-            );
-        } catch (error) {
-            Logger.error(
-                error instanceof Error
-                    ? error
-                    : new Error(String(error))
-            );
-
-            throw error;
-        }
     }
 
     /**
-     * Wait until an element attribute reaches expected value.
+     * Wait until an element attribute equals the expected value.
      */
     public static async waitForAttribute(
         elementLike: ElementLike,
@@ -218,35 +141,15 @@ export default class WaitUtils {
         timeout: number = WaitUtils.defaultTimeout
     ): Promise<void> {
 
-        const element = await WaitUtils.resolve(elementLike);
-
-        Logger.debug(
-            `Waiting for attribute "${attribute}" to equal "${expectedValue}".`
+        await WaitUtils.waitFor(
+            `have attribute "${attribute}" = "${expectedValue}"`,
+            elementLike,
+            timeout,
+            element => element.waitUntil(
+                async () => await element.getAttribute(attribute) === expectedValue,
+                { timeout }
+            )
         );
-
-        try {
-            await element.waitUntil(
-                async () => {
-                    const actualValue =
-                        await element.getAttribute(attribute);
-
-                    return actualValue === expectedValue;
-                },
-                {
-                    timeout,
-                    timeoutMsg:
-                        `Attribute "${attribute}" did not reach expected value "${expectedValue}" within ${timeout}ms.`
-                }
-            );
-        } catch (error) {
-            Logger.error(
-                error instanceof Error
-                    ? error
-                    : new Error(String(error))
-            );
-
-            throw error;
-        }
     }
 
     /**
@@ -254,47 +157,105 @@ export default class WaitUtils {
      */
     public static async waitUntil(
         condition: () => Promise<boolean>,
-        timeout: number = WaitUtils.defaultTimeout,
-        timeoutMsg =
-            `Condition was not satisfied within ${timeout}ms.`
+        description: string,
+        timeout: number = WaitUtils.defaultTimeout
     ): Promise<void> {
 
         Logger.debug(
-            `Waiting for custom condition. Timeout: ${timeout}ms`
+            `Waiting up to ${timeout}ms for: ${description}`
         );
 
         try {
+
             await browser.waitUntil(
                 condition,
-                {
-                    timeout,
-                    timeoutMsg
-                }
-            );
-        } catch (error) {
-            Logger.error(
-                error instanceof Error
-                    ? error
-                    : new Error(String(error))
+                { timeout }
             );
 
-            throw error;
+        } catch (error) {
+
+            throw WaitUtils.failure(
+                `Waiting for "${description}" failed (timeout ${timeout}ms).`,
+                error,
+                { condition: description, timeout }
+            );
         }
     }
 
     /**
-     * Explicit pause.
-     *
-     * Use only when a fixed delay is genuinely required.
+     * Fixed delay. Prefer a condition-based wait; a reason is mandatory and
+     * logged as a warning so every fixed sleep is visible and justified.
      */
     public static async pause(
-        milliseconds: number
+        milliseconds: number,
+        reason: string
     ): Promise<void> {
 
-        Logger.debug(
-            `Pausing execution for ${milliseconds}ms`
+        Logger.warn(
+            `Fixed pause of ${milliseconds}ms: ${reason}`
         );
 
         await browser.pause(milliseconds);
+    }
+
+    /**
+     * Resolve the element, log the wait, run it, and convert any failure into
+     * a WaitError that names the element, condition and timeout.
+     */
+    private static async waitFor(
+        condition: string,
+        elementLike: ElementLike,
+        timeout: number,
+        wait: (element: WebdriverIO.Element) => Promise<unknown>
+    ): Promise<void> {
+
+        // Typed WebdriverIO API to resolve a chainable `$()` into an element (no cast needed).
+        const element = await elementLike.getElement();
+        const target = WaitUtils.describe(element);
+
+        Logger.debug(
+            `Waiting up to ${timeout}ms for ${target} to ${condition}`
+        );
+
+        try {
+
+            await wait(element);
+
+        } catch (error) {
+
+            throw WaitUtils.failure(
+                `Waiting for ${target} to ${condition} failed (timeout ${timeout}ms).`,
+                error,
+                { selector: target, condition, timeout }
+            );
+        }
+    }
+
+    private static failure(
+        message: string,
+        cause: unknown,
+        context: Record<string, string | number>
+    ): WaitError {
+
+        const waitError = new WaitError(
+            message,
+            { cause, context }
+        );
+
+        Logger.error(waitError);
+
+        return waitError;
+    }
+
+    /**
+     * Human-readable element description for logs and errors.
+     */
+    private static describe(
+        element: WebdriverIO.Element
+    ): string {
+
+        return typeof element.selector === 'string'
+            ? element.selector
+            : 'element';
     }
 }

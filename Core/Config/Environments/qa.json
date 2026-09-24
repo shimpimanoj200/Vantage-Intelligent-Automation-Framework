@@ -3,15 +3,20 @@
 
     "mobile": {
         "android": {
-            "deviceName": "nightwatch-android-11",
-            "platformVersion": "11",
-            "udid": "emulator-5554",
             "appPackage": "com.inception42.vantage",
             "appActivity": "com.inception42.vantage.MainActivity",
             "automationName": "UiAutomator2",
             "autoGrantPermissions": true,
             "noReset": true,
-            "fullReset": false
+            "fullReset": false,
+
+            "devices": [
+                {
+                    "deviceName": "nightwatch-android-11",
+                    "platformVersion": "11",
+                    "udid": "emulator-5554"
+                }
+            ]
         }
     },
 
@@ -22,6 +27,7 @@
 
     "timeouts": {
         "waitForElement": 10000,
-        "command": 120000
+        "command": 120000,
+        "newCommandSeconds": 300
     }
 }

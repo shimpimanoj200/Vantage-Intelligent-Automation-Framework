@@ -1,5 +1,5 @@
 {
-    "name": "staging",
+    "name": "prod",
 
     "mobile": {
         "android": {

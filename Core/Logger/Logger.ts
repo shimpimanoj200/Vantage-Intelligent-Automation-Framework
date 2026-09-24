@@ -44,11 +44,22 @@ const logLevel =
         : DEFAULT_LOG_LEVEL;
 
 /**
+ * Device (udid) of this worker's session, set once the session exists.
+ * Each WDIO worker is its own process with one device, so module state is safe.
+ */
+let currentDevice: string | undefined;
+
+/**
  * WDIO sets WDIO_WORKER_ID (e.g. "0-0") in each worker process;
- * the launcher process has none.
+ * the launcher process has none. Adds the device once known: "0-0|emulator-5554".
  */
 function workerLabel(): string {
-    return process.env.WDIO_WORKER_ID ?? 'launcher';
+
+    const worker = process.env.WDIO_WORKER_ID ?? 'launcher';
+
+    return currentDevice
+        ? `${worker}|${currentDevice}`
+        : worker;
 }
 
 const { combine, timestamp, printf, errors } =
@@ -99,6 +110,16 @@ if (!isRequestedLogLevelValid) {
 }
 
 export class Logger {
+
+    /**
+     * Tag all following log lines of this process with the device udid.
+     */
+    public static setDevice(
+        udid: string | undefined
+    ): void {
+
+        currentDevice = udid;
+    }
 
     /**
      * Log debug information.

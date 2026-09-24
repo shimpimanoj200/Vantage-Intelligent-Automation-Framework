@@ -1,145 +1,153 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { browser } from '@wdio/globals';
+import {
+    ConfigManager,
+    type AndroidConfig,
+    type AndroidDeviceConfig
+} from '../../Core/Config/ConfigManager';
+import { DriverError, type ErrorContext } from '../../Core/Error/FrameworkError';
 import { Logger } from '../../Core/Logger/Logger';
+import DriverManager from './DriverManager';
 
+const SCREENSHOT_DIRECTORY = path.resolve('Reports', 'Screenshots');
+
+/**
+ * Creates session capabilities from configuration and performs
+ * application/session operations on the active session.
+ */
 export default class DriverFactory {
 
     /**
-     * Get the active WebdriverIO browser session.
+     * One capability per configured device for the current platform.
+     * WDIO runs every spec on every capability, one session per device.
      */
-    public static getDriver() {
+    public static createCapabilities(): WebdriverIO.Capabilities[] {
 
-        Logger.debug(
-            'Returning active WebdriverIO driver session.'
-        );
+        const platform = DriverManager.platform;
 
-        return browser;
+        switch (platform) {
+
+            case 'android': {
+
+                const android = ConfigManager.getAndroid();
+
+                return android.devices.map(device =>
+                    DriverFactory.createAndroidCapability(android, device)
+                );
+            }
+        }
     }
 
     /**
-     * Launch Android application.
+     * Bring the application to the foreground (launching it if needed).
      */
     public static async activateApp(
         appPackage: string
     ): Promise<void> {
 
-        Logger.info(
-            `Activating Android application: ${appPackage}`
+        await DriverFactory.execute(
+            `Activate application ${appPackage}`,
+            { appPackage },
+            () => browser.activateApp(appPackage)
         );
-
-        try {
-
-            await browser.activateApp(
-                appPackage
-            );
-
-            Logger.info(
-                `Android application activated successfully: ${appPackage}`
-            );
-
-        } catch (error) {
-
-            Logger.error(
-                error instanceof Error
-                    ? error
-                    : new Error(String(error))
-            );
-
-            throw error;
-        }
     }
 
     /**
-     * Terminate Android application.
+     * Stop the application.
      */
     public static async terminateApp(
         appPackage: string
     ): Promise<void> {
 
-        Logger.info(
-            `Terminating Android application: ${appPackage}`
+        await DriverFactory.execute(
+            `Terminate application ${appPackage}`,
+            { appPackage },
+            () => browser.terminateApp(appPackage)
         );
-
-        try {
-
-            await browser.terminateApp(
-                appPackage
-            );
-
-            Logger.info(
-                `Android application terminated successfully: ${appPackage}`
-            );
-
-        } catch (error) {
-
-            Logger.error(
-                error instanceof Error
-                    ? error
-                    : new Error(String(error))
-            );
-
-            throw error;
-        }
     }
 
     /**
-     * Reset current WebdriverIO session.
-     */
-    public static async resetSession(): Promise<void> {
-
-        Logger.info(
-            'Reloading WebdriverIO session.'
-        );
-
-        try {
-
-            await browser.reloadSession();
-
-            Logger.info(
-                'WebdriverIO session reloaded successfully.'
-            );
-
-        } catch (error) {
-
-            Logger.error(
-                error instanceof Error
-                    ? error
-                    : new Error(String(error))
-            );
-
-            throw error;
-        }
-    }
-
-    /**
-     * Take screenshot.
+     * Save a PNG screenshot to Reports/Screenshots/<name>-<timestamp>.png and
+     * return its absolute path. Taken during a test, the Allure reporter also
+     * attaches it to that test automatically.
      */
     public static async takeScreenshot(
-        screenshotPath: string
+        name: string
+    ): Promise<string> {
+
+        const safeName = name.replace(/[^a-zA-Z0-9-_]+/g, '_').slice(0, 100);
+
+        const absolutePath = path.join(
+            SCREENSHOT_DIRECTORY,
+            `${safeName}-${Date.now()}.png`
+        );
+
+        await DriverFactory.execute(
+            `Save screenshot ${absolutePath}`,
+            { screenshotPath: absolutePath },
+            async () => {
+                fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
+                await browser.saveScreenshot(absolutePath);
+            }
+        );
+
+        return absolutePath;
+    }
+
+    private static createAndroidCapability(
+        android: AndroidConfig,
+        device: AndroidDeviceConfig
+    ): WebdriverIO.Capabilities {
+
+        return {
+            platformName: 'Android',
+            'appium:automationName': android.automationName,
+            'appium:deviceName': device.deviceName,
+            'appium:udid': device.udid,
+            'appium:platformVersion': device.platformVersion,
+            // Unset by default: the UiAutomator2 driver then allocates a free port itself.
+            ...(device.systemPort ? { 'appium:systemPort': device.systemPort } : {}),
+            'appium:appPackage': android.appPackage,
+            'appium:appActivity': android.appActivity,
+            'appium:autoGrantPermissions': android.autoGrantPermissions,
+            'appium:noReset': android.noReset,
+            'appium:fullReset': android.fullReset,
+            'appium:newCommandTimeout': ConfigManager.getTimeouts().newCommandSeconds
+        };
+    }
+
+    /**
+     * Log, run and, on failure, rethrow as DriverError (original error kept as
+     * cause) with the device of the current session attached.
+     */
+    private static async execute(
+        action: string,
+        context: ErrorContext,
+        operation: () => Promise<unknown>
     ): Promise<void> {
 
-        Logger.info(
-            `Taking screenshot: ${screenshotPath}`
-        );
+        Logger.info(action);
 
         try {
 
-            await browser.saveScreenshot(
-                screenshotPath
-            );
+            await operation();
 
-            Logger.info(
-                `Screenshot saved successfully: ${screenshotPath}`
-            );
+            Logger.info(`${action}: done`);
 
         } catch (error) {
 
-            Logger.error(
-                error instanceof Error
-                    ? error
-                    : new Error(String(error))
+            const driverError = new DriverError(
+                `${action}: failed`,
+                {
+                    cause: error,
+                    context: { ...context, device: DriverManager.deviceId }
+                }
             );
 
-            throw error;
+            Logger.error(driverError);
+
+            throw driverError;
         }
     }
 }
