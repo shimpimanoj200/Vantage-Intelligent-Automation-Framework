@@ -11,7 +11,8 @@
     "test:android:staging": "cross-env TEST_ENV=staging PLATFORM=android wdio run ./wdio.conf.ts",
     "test:android:prod": "cross-env TEST_ENV=prod PLATFORM=android wdio run ./wdio.conf.ts",
     "typecheck": "tsc --noEmit -p tsconfig.e2e.json",
-    "allure:generate": "allure generate ./Reports/Allure/allure-results -o ./Reports/Allure/allure-report",
+    "allure:clean-report": "node -e \"require('fs').rmSync('Reports/Allure/allure-report', { recursive: true, force: true })\"",
+    "allure:generate": "npm run allure:clean-report && allure generate ./Reports/Allure/allure-results -o ./Reports/Allure/allure-report",
     "allure:open": "allure open ./Reports/Allure/allure-report",
     "allure:report": "npm run allure:generate && npm run allure:open"
   },

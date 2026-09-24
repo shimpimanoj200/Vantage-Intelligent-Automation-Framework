@@ -1,29 +1,36 @@
-import BaseScreen from './BaseScreen';
+import type { ChainablePromiseElement } from 'webdriverio';
+import BaseScreen from '../BaseScreen';
 
-class FocusScreen extends BaseScreen {
+/**
+ * Focus (home) screen: the app's landing screen with the brief actions.
+ */
+export class FocusScreen extends BaseScreen {
 
-    public get focusScreen() {
-        return $(
-            'android=new UiSelector().resourceId("home-screen")'
-        );
+    /** Root element of the Focus screen. */
+    public get container(): ChainablePromiseElement {
+        return this.byTestId('home-screen');
     }
 
-    public get draftReplyButton() {
-        return $(
-            'android=new UiSelector().resourceId("home-brief-action-0-0")'
-        );
+    /**
+     * First brief action (row 0, column 0), currently "Draft Reply".
+     * Index-based testID: if the order of brief actions changes, update it here.
+     */
+    public get draftReplyButton(): ChainablePromiseElement {
+        return this.byTestId('home-brief-action-0-0');
     }
 
-    async waitForFocusScreen(): Promise<void> {
-        await this.waitForDisplayed(
-            this.focusScreen
-        );
+    /**
+     * Wait until the Focus screen is shown.
+     */
+    public async waitForLoaded(): Promise<void> {
+        await this.waitForDisplayed(this.container);
     }
 
-    async openDraftReply(): Promise<void> {
-        await this.click(
-            this.draftReplyButton
-        );
+    /**
+     * Tap the Draft Reply brief action.
+     */
+    public async tapDraftReply(): Promise<void> {
+        await this.tap(this.draftReplyButton);
     }
 }
 

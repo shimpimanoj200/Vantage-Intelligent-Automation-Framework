@@ -22,7 +22,7 @@
     "Fixtures/**/*.ts",
     "Mobile/**/*.ts",
     "Screens/**/*.ts",
-    "Workflows/**/*.ts",
+    "Macros/**/*.ts",
     "test/**/*.ts",
     "wdio.conf.ts"
   ]

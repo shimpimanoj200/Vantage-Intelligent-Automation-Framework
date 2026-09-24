@@ -1,16 +1,31 @@
-// import LoginScreen from '../../screens/mobile/android/LoginScreen';
-// import HomeScreen from '../../screens/mobile/android/HomeScreen';
+import { Logger } from '../../Core/Logger/Logger';
+import FocusScreen from '../../Screens/Mobile/Android/FocusScreen';
+import LoginScreen from '../../Screens/Mobile/Android/LoginScreen';
 
-// export class LoginWorkflow {
+/**
+ * Reusable login business actions for tests.
+ *
+ * UNVERIFIED: depends on LoginScreen, whose locators have not been checked
+ * against the app yet. Not used by any test until they are.
+ */
+export default class LoginMacros {
 
-//     async login(
-//         username: string,
-//         password: string
-//     ) {
-//         await LoginScreen.login(username, password);
+    /**
+     * Log in and wait until the Focus (home) screen is shown.
+     * The password is never logged.
+     */
+    public static async login(
+        username: string,
+        password: string
+    ): Promise<void> {
 
-//         await HomeScreen.waitUntilLoaded();
-//     }
-// }
+        Logger.info(`Macro: log in as "${username}"`);
 
-// export default new LoginWorkflow();
+        await LoginScreen.waitForLoaded();
+        await LoginScreen.enterUsername(username);
+        await LoginScreen.enterPassword(password);
+        await LoginScreen.tapLogin();
+
+        await FocusScreen.waitForLoaded();
+    }
+}

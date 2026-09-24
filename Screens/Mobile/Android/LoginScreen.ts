@@ -1,39 +1,43 @@
-// import { BaseScreen } from './BaseScreen.ts';
+import type { ChainablePromiseElement } from 'webdriverio';
+import BaseScreen from '../BaseScreen';
 
-// class LoginScreen extends BaseScreen {
+/**
+ * Login screen.
+ *
+ * UNVERIFIED: the testIDs below are placeholders and have not been checked
+ * against the app yet. Confirm them (Appium Inspector / Appium MCP) before
+ * using this screen in a test.
+ */
+export class LoginScreen extends BaseScreen {
 
-//     get username() {
-//         return $('~username');
-//     }
+    public get usernameInput(): ChainablePromiseElement {
+        return this.byTestId('username');
+    }
 
-//     get password() {
-//         return $('~password');
-//     }
+    public get passwordInput(): ChainablePromiseElement {
+        return this.byTestId('password');
+    }
 
-//     get loginButton() {
-//         return $('~login-button');
-//     }
+    public get loginButton(): ChainablePromiseElement {
+        return this.byTestId('login-button');
+    }
 
-//     async enterUsername(value: string) {
-//         await this.enterText(this.username, value);
-//     }
+    public async waitForLoaded(): Promise<void> {
+        await this.waitForDisplayed(this.usernameInput);
+    }
 
-//     async enterPassword(value: string) {
-//         await this.enterText(this.password, value);
-//     }
+    public async enterUsername(username: string): Promise<void> {
+        await this.enterText(this.usernameInput, username);
+    }
 
-//     async clickLogin() {
-//         await this.click(this.loginButton);
-//     }
+    public async enterPassword(password: string): Promise<void> {
+        await this.enterText(this.passwordInput, password);
+    }
 
-//     async login(
-//         username: string,
-//         password: string
-//     ) {
-//         await this.enterUsername(username);
-//         await this.enterPassword(password);
-//         await this.clickLogin();
-//     }
-// }
+    public async tapLogin(): Promise<void> {
+        await this.hideKeyboard();
+        await this.tap(this.loginButton);
+    }
+}
 
-// export default new LoginScreen();
+export default new LoginScreen();

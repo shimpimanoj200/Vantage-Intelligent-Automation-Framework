@@ -1,53 +1,97 @@
 import './EnvLoader';
 import fs from 'node:fs';
 import path from 'node:path';
+import { z } from 'zod';
 import { Logger } from '../Logger/Logger';
+import { ConfigError } from '../Error/FrameworkError';
 
-export interface AndroidConfig {
-    deviceName: string;
-    platformVersion: string;
-    udid: string;
-    appPackage: string;
-    appActivity: string;
-    automationName: string;
-    autoGrantPermissions: boolean;
-    noReset: boolean;
-    fullReset: boolean;
-}
+const DEFAULT_ENVIRONMENT = 'qa';
 
-export interface AppiumConfig {
-    host: string;
-    port: number;
-}
+const nonEmpty = z.string().trim().min(1, 'must not be empty');
+const positiveInt = z.number().int().positive();
+const port = positiveInt.max(65535);
 
-export interface TimeoutConfig {
-    waitForElement: number;
-    command: number;
-}
+const isUnique = (values: Array<string | number>): boolean =>
+    new Set(values).size === values.length;
 
-export interface EnvironmentConfig {
-    name: string;
+/**
+ * Schema for Core/Config/Environments/<env>.json.
+ * Strict: unknown keys (e.g. typos) are rejected rather than silently ignored.
+ */
+const AndroidDeviceSchema = z.strictObject({
+    deviceName: nonEmpty,
+    platformVersion: nonEmpty,
+    udid: nonEmpty,
+    /**
+     * Optional host port of the UiAutomator2 server. Leave unset: the driver then
+     * picks a free port in 8200-8299 under a lock, which is safe for parallel runs.
+     * Set only for special setups (e.g. several Appium servers on one host).
+     */
+    systemPort: port.optional()
+});
 
-    mobile: {
-        android: AndroidConfig;
-    };
+const AndroidConfigSchema = z.strictObject({
+    appPackage: nonEmpty,
+    appActivity: nonEmpty,
+    automationName: nonEmpty,
+    autoGrantPermissions: z.boolean(),
+    noReset: z.boolean(),
+    fullReset: z.boolean(),
+    /** Every spec runs on every device listed here (one parallel session per device). */
+    devices: z.array(AndroidDeviceSchema)
+        .min(1, 'at least one device is required')
+        .refine(
+            devices => isUnique(devices.map(device => device.udid)),
+            'each device must have a unique udid'
+        )
+        .refine(
+            devices => isUnique(
+                devices.flatMap(device => device.systemPort ?? [])
+            ),
+            'each device that sets systemPort must use a unique one'
+        )
+});
 
-    appium: AppiumConfig;
+const AppiumConfigSchema = z.strictObject({
+    host: nonEmpty,
+    port
+});
 
-    timeouts: TimeoutConfig;
-}
+const TimeoutConfigSchema = z.strictObject({
+    /** Default explicit-wait timeout, in milliseconds. */
+    waitForElement: positiveInt,
+    /** WebDriver request timeout (wdio connectionRetryTimeout), in milliseconds. */
+    command: positiveInt,
+    /** Appium idle session timeout (appium:newCommandTimeout), in SECONDS. */
+    newCommandSeconds: positiveInt
+});
+
+const EnvironmentConfigSchema = z.strictObject({
+    name: nonEmpty,
+    mobile: z.strictObject({
+        android: AndroidConfigSchema
+    }),
+    appium: AppiumConfigSchema,
+    timeouts: TimeoutConfigSchema
+});
+
+export type AndroidDeviceConfig = z.infer<typeof AndroidDeviceSchema>;
+export type AndroidConfig = z.infer<typeof AndroidConfigSchema>;
+export type AppiumConfig = z.infer<typeof AppiumConfigSchema>;
+export type TimeoutConfig = z.infer<typeof TimeoutConfigSchema>;
+export type EnvironmentConfig = z.infer<typeof EnvironmentConfigSchema>;
 
 export class ConfigManager {
 
-    private static config: EnvironmentConfig;
+    private static config: EnvironmentConfig | undefined;
 
     /**
-     * Initialize environment configuration.
+     * Load, override and validate the configuration for TEST_ENV.
      */
-    public static initialize(): void {
+    public static initialize(): EnvironmentConfig {
 
         const environment =
-            process.env.TEST_ENV?.toLowerCase() || 'qa';
+            process.env.TEST_ENV?.trim().toLowerCase() || DEFAULT_ENVIRONMENT;
 
         Logger.info(
             `Initializing configuration for environment: ${environment}`
@@ -65,243 +109,177 @@ export class ConfigManager {
             `Configuration file path: ${configPath}`
         );
 
-        if (!fs.existsSync(configPath)) {
-
-            const errorMessage =
-                `Environment configuration not found: ${configPath}`;
-
-            Logger.error(errorMessage);
-
-            throw new Error(errorMessage);
-        }
+        let config: EnvironmentConfig;
 
         try {
 
-            const fileConfig = JSON.parse(
-                fs.readFileSync(configPath, 'utf-8')
-            ) as EnvironmentConfig;
-
-            ConfigManager.config =
-                ConfigManager.applyEnvironmentOverrides(
-                    fileConfig
-                );
-
-            ConfigManager.validate();
-
-            Logger.info(
-                `Configuration loaded successfully for environment: ${environment}`
+            const fileConfig = ConfigManager.validate(
+                ConfigManager.readJson(configPath),
+                configPath
             );
 
-            Logger.debug(
-                `Android device: ${ConfigManager.config.mobile.android.deviceName}`
-            );
-
-            Logger.debug(
-                `Android UDID: ${ConfigManager.config.mobile.android.udid}`
-            );
-
-            Logger.debug(
-                `Android platform version: ${ConfigManager.config.mobile.android.platformVersion}`
-            );
-
-            Logger.debug(
-                `App package: ${ConfigManager.config.mobile.android.appPackage}`
-            );
-
-            Logger.debug(
-                `App activity: ${ConfigManager.config.mobile.android.appActivity}`
-            );
-
-            Logger.debug(
-                `Appium server: ${ConfigManager.config.appium.host}:${ConfigManager.config.appium.port}`
+            config = ConfigManager.validate(
+                ConfigManager.applyEnvironmentOverrides(fileConfig),
+                `${configPath} + environment variable overrides`
             );
 
         } catch (error) {
 
-            if (error instanceof Error) {
-                Logger.error(error);
-            } else {
-                Logger.error(
-                    new Error(String(error))
+            const configError = error instanceof ConfigError
+                ? error
+                : new ConfigError(
+                    `Failed to load configuration for environment "${environment}".`,
+                    { cause: error, context: { environment, configPath } }
                 );
-            }
 
-            throw error;
-        }
-    }
+            Logger.error(configError);
 
-    /**
-     * Apply environment variable overrides.
-     */
-    private static applyEnvironmentOverrides(
-        config: EnvironmentConfig
-    ): EnvironmentConfig {
-
-        const android = config.mobile.android;
-
-        if (process.env.ANDROID_DEVICE_NAME) {
-
-            Logger.debug(
-                'Overriding Android device name from environment variable.'
-            );
-
-            android.deviceName =
-                process.env.ANDROID_DEVICE_NAME;
+            throw configError;
         }
 
-        if (process.env.ANDROID_PLATFORM_VERSION) {
+        ConfigManager.config = config;
 
-            Logger.debug(
-                'Overriding Android platform version from environment variable.'
-            );
+        const { android } = config.mobile;
+        const { appium } = config;
 
-            android.platformVersion =
-                process.env.ANDROID_PLATFORM_VERSION;
-        }
+        Logger.info(
+            `Configuration loaded successfully for environment: ${environment}`
+        );
 
-        if (process.env.ANDROID_UDID) {
-
-            Logger.debug(
-                'Overriding Android UDID from environment variable.'
-            );
-
-            android.udid =
-                process.env.ANDROID_UDID;
-        }
-
-        if (process.env.APPIUM_HOST) {
-
-            Logger.debug(
-                'Overriding Appium host from environment variable.'
-            );
-
-            config.appium.host =
-                process.env.APPIUM_HOST;
-        }
-
-        if (process.env.APPIUM_PORT) {
-
-            Logger.debug(
-                'Overriding Appium port from environment variable.'
-            );
-
-            const port =
-                Number(process.env.APPIUM_PORT);
-
-            if (Number.isNaN(port)) {
-
-                throw new Error(
-                    `Invalid APPIUM_PORT value: ${process.env.APPIUM_PORT}`
-                );
-            }
-
-            config.appium.port = port;
-        }
+        Logger.debug(
+            `App ${android.appPackage}/${android.appActivity}, Appium ${appium.host}:${appium.port}, ` +
+            `devices: ${android.devices
+                .map(device => `${device.deviceName} (Android ${device.platformVersion}, udid ${device.udid}, systemPort ${device.systemPort ?? 'auto'})`)
+                .join('; ')}`
+        );
 
         return config;
     }
 
     /**
-     * Validate mandatory configuration.
+     * Read and parse the environment JSON file.
      */
-    private static validate(): void {
+    private static readJson(
+        configPath: string
+    ): unknown {
 
-        Logger.debug(
-            'Validating environment configuration.'
-        );
+        if (!fs.existsSync(configPath)) {
 
-        if (!ConfigManager.config.name) {
-
-            throw new Error(
-                'Environment name is required.'
+            throw new ConfigError(
+                `Environment configuration not found: ${configPath}`,
+                { context: { configPath } }
             );
         }
 
-        if (!ConfigManager.config.mobile.android.deviceName) {
+        try {
 
-            throw new Error(
-                'Android deviceName is required.'
+            return JSON.parse(
+                fs.readFileSync(configPath, 'utf-8')
+            );
+
+        } catch (error) {
+
+            throw new ConfigError(
+                `Environment configuration is not valid JSON: ${configPath}`,
+                { cause: error, context: { configPath } }
             );
         }
+    }
 
-        if (!ConfigManager.config.mobile.android.udid) {
+    /**
+     * Validate a configuration object against the schema, reporting every problem.
+     */
+    private static validate(
+        candidate: unknown,
+        source: string
+    ): EnvironmentConfig {
 
-            throw new Error(
-                'Android UDID is required.'
-            );
+        const result = EnvironmentConfigSchema.safeParse(candidate);
+
+        if (result.success) {
+            return result.data;
         }
 
-        if (!ConfigManager.config.mobile.android.platformVersion) {
+        const problems = result.error.issues
+            .map(issue => `  - ${issue.path.join('.') || '(root)'}: ${issue.message}`)
+            .join('\n');
 
-            throw new Error(
-                'Android platformVersion is required.'
-            );
-        }
-
-        if (!ConfigManager.config.mobile.android.automationName) {
-
-            throw new Error(
-                'Android automationName is required.'
-            );
-        }
-
-        if (!ConfigManager.config.mobile.android.appPackage) {
-
-            throw new Error(
-                'Android appPackage is required.'
-            );
-        }
-
-        if (!ConfigManager.config.mobile.android.appActivity) {
-
-            throw new Error(
-                'Android appActivity is required.'
-            );
-        }
-
-        if (!ConfigManager.config.appium.host) {
-
-            throw new Error(
-                'Appium host is required.'
-            );
-        }
-
-        if (!ConfigManager.config.appium.port) {
-
-            throw new Error(
-                'Appium port is required.'
-            );
-        }
-
-        if (!ConfigManager.config.timeouts.waitForElement) {
-
-            throw new Error(
-                'waitForElement timeout is required.'
-            );
-        }
-
-        if (!ConfigManager.config.timeouts.command) {
-
-            throw new Error(
-                'command timeout is required.'
-            );
-        }
-
-        Logger.debug(
-            'Environment configuration validation completed successfully.'
+        throw new ConfigError(
+            `Invalid environment configuration (${source}):\n${problems}`,
+            { context: { source } }
         );
     }
 
     /**
-     * Get complete environment configuration.
+     * Apply environment variable overrides. Returns a new object; the
+     * result is validated again by the caller.
+     *
+     * ANDROID_DEVICE_NAME / ANDROID_PLATFORM_VERSION / ANDROID_UDID describe ONE
+     * device: when any is set, the run targets a single device built from the
+     * first configured device plus the overrides.
+     */
+    private static applyEnvironmentOverrides(
+        config: EnvironmentConfig
+    ): EnvironmentConfig {
+
+        const {
+            ANDROID_DEVICE_NAME,
+            ANDROID_PLATFORM_VERSION,
+            ANDROID_UDID,
+            APPIUM_HOST,
+            APPIUM_PORT
+        } = process.env;
+
+        const android = { ...config.mobile.android };
+        const appium = { ...config.appium };
+
+        if (ANDROID_DEVICE_NAME || ANDROID_PLATFORM_VERSION || ANDROID_UDID) {
+
+            const [firstDevice] = android.devices;
+
+            Logger.debug(
+                'ANDROID_* override set: running on a single device built from the first configured device.'
+            );
+
+            android.devices = [{
+                ...firstDevice,
+                deviceName: ANDROID_DEVICE_NAME || firstDevice.deviceName,
+                platformVersion: ANDROID_PLATFORM_VERSION || firstDevice.platformVersion,
+                udid: ANDROID_UDID || firstDevice.udid
+            }];
+        }
+
+        if (APPIUM_HOST) {
+
+            Logger.debug(
+                'Overriding Appium host from environment variable APPIUM_HOST.'
+            );
+
+            appium.host = APPIUM_HOST;
+        }
+
+        if (APPIUM_PORT) {
+
+            Logger.debug(
+                'Overriding Appium port from environment variable APPIUM_PORT.'
+            );
+
+            appium.port = Number(APPIUM_PORT);
+        }
+
+        return {
+            ...config,
+            mobile: { ...config.mobile, android },
+            appium
+        };
+    }
+
+    /**
+     * Get complete environment configuration (initialises lazily).
      */
     public static get(): EnvironmentConfig {
 
-        if (!ConfigManager.config) {
-            ConfigManager.initialize();
-        }
-
-        return ConfigManager.config;
+        return ConfigManager.config ?? ConfigManager.initialize();
     }
 
     /**
@@ -348,7 +326,7 @@ export class ConfigManager {
 
         if (!appPath) {
 
-            throw new Error(
+            throw new ConfigError(
                 'ANDROID_APP_PATH environment variable is required.'
             );
         }
