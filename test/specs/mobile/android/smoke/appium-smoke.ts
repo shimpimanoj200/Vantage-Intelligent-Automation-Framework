@@ -2,8 +2,6 @@ describe('Vintage Smoke Test', () => {
 
 it('should open Draft Reply chat and verify Welcome', async () => {
 
-    await driver.activateApp('com.inception42.vantage');
-
     const draftReply = $(
         'android=new UiSelector().resourceId("home-brief-action-0-0")'
     );

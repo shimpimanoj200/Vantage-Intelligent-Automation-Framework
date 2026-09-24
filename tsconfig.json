@@ -7,16 +7,23 @@
     "skipLibCheck": true,
     "sourceMap": true,
     "outDir": "./dist",
+    "forceConsistentCasingInFileNames": true,
     "types": [
       "node",
       "@wdio/globals/types",
+      "expect-webdriverio",
       "@wdio/mocha-framework",
+      "@wdio/appium-service",
       "mocha"
     ]
   },
   "include": [
-    "src/**/*.ts",
+    "Core/**/*.ts",
+    "Fixtures/**/*.ts",
+    "Mobile/**/*.ts",
+    "Screens/**/*.ts",
+    "Workflows/**/*.ts",
     "test/**/*.ts",
-    "config/**/*.ts"
+    "wdio.conf.ts"
   ]
 }
