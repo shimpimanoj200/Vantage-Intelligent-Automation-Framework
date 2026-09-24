@@ -1,0 +1,27 @@
+{
+    "name": "dev",
+
+    "mobile": {
+        "android": {
+            "deviceName": "Pixel_9a",
+            "platformVersion": "16",
+            "udid": "emulator-5554",
+            "appPackage": "com.inception42.vantage",
+            "appActivity": "com.inception42.vantage.MainActivity",
+            "automationName": "UiAutomator2",
+            "autoGrantPermissions": true,
+            "noReset": true,
+            "fullReset": false
+        }
+    },
+
+    "appium": {
+        "host": "127.0.0.1",
+        "port": 4723
+    },
+
+    "timeouts": {
+        "waitForElement": 10000,
+        "command": 120000
+    }
+}

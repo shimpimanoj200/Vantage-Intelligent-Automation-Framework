@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "appium-mcp": {
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "appium-mcp@latest"],
+      "env": {
+        "ANDROID_HOME": "C:\\Users\\manoj.g.shimpi\\AppData\\Local\\Android\\Sdk"
+      }
+    }
+  }
+}

@@ -1,3 +1,9 @@
+import { ConfigManager } from './Core/Config/ConfigManager';
+import MobileFixture from './Fixtures/Mobile/MobileFixture';
+
+const environmentConfig = ConfigManager.get();
+const android = environmentConfig.mobile.android;
+
 export const config: WebdriverIO.Config = {
     //
     // ====================
@@ -7,7 +13,7 @@ export const config: WebdriverIO.Config = {
     runner: 'local',
     tsConfigPath: './tsconfig.e2e.json',
     
-    port: 4723,
+    port: environmentConfig.appium.port,
     //
     // ==================
     // Specify Test Files
@@ -46,25 +52,44 @@ export const config: WebdriverIO.Config = {
     // and 30 processes will get spawned. The property handles how many capabilities
     // from the same test should run tests.
     //
-    maxInstances: 10,
+    maxInstances: 1,
     //
     // If you have trouble getting all important capabilities together, check out the
     // Sauce Labs platform configurator - a great tool to configure your capabilities:
     // https://saucelabs.com/platform/platform-configurator
     //
-    capabilities: [
+    capabilities: [ 
     {
         platformName: 'Android',
-        'appium:automationName': 'UiAutomator2',
-        'appium:deviceName': 'nightwatch-android-11',
-        'appium:udid': 'emulator-5554',
-        'appium:platformVersion': '11',
-        'appium:appPackage': 'com.inception42.vantage',
-        'appium:appActivity': 'com.inception42.vantage.MainActivity',
-        'appium:autoGrantPermissions': true,
-        'appium:noReset': true
-    }
-],
+
+        'appium:automationName':
+            android.automationName,
+
+        'appium:deviceName':
+            android.deviceName,
+
+        'appium:udid':
+            android.udid,
+
+        'appium:platformVersion':
+            android.platformVersion,
+
+        'appium:appPackage':
+            android.appPackage,
+
+        'appium:appActivity':
+            android.appActivity,
+
+        'appium:autoGrantPermissions':
+            android.autoGrantPermissions,
+
+        'appium:noReset':
+            android.noReset,
+
+        'appium:fullReset':
+            android.fullReset,
+      }
+    ],
 
     //
     // ===================
@@ -100,7 +125,8 @@ export const config: WebdriverIO.Config = {
     // baseUrl: 'http://localhost:8080',
     //
     // Default timeout for all waitFor* commands.
-    waitforTimeout: 10000,
+    waitforTimeout:
+    environmentConfig.timeouts.waitForElement,
     //
     // Default timeout in milliseconds for request
     // if browser driver or grid doesn't send response
@@ -113,7 +139,7 @@ export const config: WebdriverIO.Config = {
     // Services take over a specific job you don't want to take care of. They enhance
     // your test setup with almost no effort. Unlike plugins, they don't add new
     // commands. Instead, they hook themselves up into the test process.
-    services: ['appium', 'visual'],
+    services: ['appium'],
 
     // Framework you want to run your specs with.
     // The following are supported: Mocha, Jasmine, and Cucumber
@@ -136,7 +162,27 @@ export const config: WebdriverIO.Config = {
     // Test reporter for stdout.
     // The only one supported by default is 'dot'
     // see also: https://webdriver.io/docs/dot-reporter
-    reporters: ['spec'],
+    reporters: [
+    'spec',
+    [
+        'allure',
+        {
+            outputDir: './Reports/Allure/allure-results',
+
+            disableWebdriverStepsReporting: true,
+
+            disableWebdriverScreenshotsReporting: false,
+
+            addConsoleLogs: true,
+
+            reportedEnvironmentVars: {
+                TEST_ENV: process.env.TEST_ENV || 'qa',
+                PLATFORM: process.env.PLATFORM || 'android',
+                NODE_VERSION: process.version
+            }
+        }
+    ]
+],
 
     // Options to be passed to Mocha.
     // See the full list at http://mochajs.org/
@@ -197,8 +243,10 @@ export const config: WebdriverIO.Config = {
      * @param {Array.<String>} specs        List of spec file paths that are to be run
      * @param {object}         browser      instance of created browser/device session
      */
-    // before: function (capabilities, specs) {
-    // },
+    before: async function () {
+
+    await MobileFixture.beforeTest();
+},
     /**
      * Runs before a WebdriverIO command gets executed.
      * @param {string} commandName hook command name
@@ -239,8 +287,10 @@ export const config: WebdriverIO.Config = {
      * @param {boolean} result.passed    true if test has passed, otherwise false
      * @param {object}  result.retries   information about spec related retries, e.g. `{ attempts: 0, limit: 0 }`
      */
-    // afterTest: function(test, context, { error, result, duration, passed, retries }) {
-    // },
+    afterTest: async function () {
+
+    await MobileFixture.afterTest();
+},
 
 
     /**
@@ -265,8 +315,10 @@ export const config: WebdriverIO.Config = {
      * @param {Array.<Object>} capabilities list of capabilities details
      * @param {Array.<String>} specs List of spec file paths that ran
      */
-    // after: function (result, capabilities, specs) {
-    // },
+  after: async function () {
+
+    await MobileFixture.afterAll();
+},
     /**
      * Gets executed right after terminating the webdriver session.
      * @param {object} config wdio configuration object
